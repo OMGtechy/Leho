@@ -13,6 +13,8 @@ namespace Leho
         public static void Configure(Options options)
         {
             var consoleTarget = new ConsoleTarget();
+            consoleTarget.Layout =
+                "${longdate} | ${pad:padding=5:inner=${level}} | ${message} ${exception:format=ToString,Data,exceptionDataSeparator=" + Environment.NewLine + "}";
 
             config = new LoggingConfiguration();
             config.AddRuleForAllLevels(consoleTarget);
