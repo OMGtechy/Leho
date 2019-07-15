@@ -67,13 +67,15 @@ namespace Leho
 
         static void Main(string[] args)
         {
-            if (!BitConverter.IsLittleEndian)
-            {
-                throw new NotSupportedException("Big-endian systems are not supported.");
-            }
-
             Parser.Default.ParseArguments<Options>(args).WithParsed(options =>
             {
+                Logger.Configure(options);
+
+                if (!BitConverter.IsLittleEndian)
+                {
+                    throw new NotSupportedException("Big-endian systems are not supported.");
+                }
+
                 var livePacketDevice = GetLivePacketDevice(options.RequestedNetworkInterface);
 
                 if (options.ArpMitmVictimIpV4 != null)
