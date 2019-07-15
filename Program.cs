@@ -7,6 +7,7 @@ using PcapDotNet.Packets.Ethernet;
 using PcapDotNet.Packets.IpV4;
 using System;
 using System.Linq;
+using static Leho.Logger;
 
 namespace Leho
 {
@@ -71,55 +72,62 @@ namespace Leho
             {
                 Logger.Configure(options);
 
-                if (!BitConverter.IsLittleEndian)
+                try
                 {
-                    throw new NotSupportedException("Big-endian systems are not supported.");
+                    if (!BitConverter.IsLittleEndian)
+                    {
+                        throw new NotSupportedException("Big-endian systems are not supported.");
+                    }
+
+                    var livePacketDevice = GetLivePacketDevice(options.RequestedNetworkInterface);
+
+                    if (options.ArpMitmVictimIpV4 != null)
+                    {
+                        var localMacAddress = livePacketDevice.GetMacAddress();
+
+                        // TODO: what happens if the IpV4 address is invalid?
+                        var victimIpV4Address = new IpV4Address(options.ArpMitmVictimIpV4);
+                        var gatewayIpV4Address = GetGatewayIpV4Address(livePacketDevice);
+                        var localIpV4SocketAddresses = livePacketDevice.Addresses.Where(address => address.Address != null);
+
+                        if (localIpV4SocketAddresses.Count() > 1)
+                        {
+                            throw new NotSupportedException($"Found multiple IPv4 addresses for '{livePacketDevice.Name}'.");
+                        }
+
+                        var localIpV4SocketAddress = localIpV4SocketAddresses.SingleOrDefault()?.Address;
+                        if (localIpV4SocketAddress == null || !(localIpV4SocketAddress is IpV4SocketAddress))
+                        {
+                            throw new NotSupportedException($"'{livePacketDevice.Name}' doesn't have an IPv4 address.");
+                        }
+
+                        var localIpV4Address = ((IpV4SocketAddress)localIpV4SocketAddress).Address;
+
+                        using (var packetCommunicator = livePacketDevice.Open())
+                        {
+                            MacAddress? victimMacAddress = null;
+                            new ArpRequest(victimIpV4Address, localMacAddress, localIpV4Address, macAddress =>
+                            {
+                                victimMacAddress = macAddress;
+                            }).Execute(packetCommunicator);
+
+                            MacAddress? gatewayMacAddress = null;
+                            new ArpRequest(gatewayIpV4Address, localMacAddress, localIpV4Address, macAddress =>
+                            {
+                                gatewayMacAddress = macAddress;
+                            }).Execute(packetCommunicator);
+
+                            // TODO: what if it never gets one?
+                            while (victimMacAddress == null) ;
+                            while (gatewayMacAddress == null) ;
+
+                            new ArpMitm(gatewayMacAddress.Value, gatewayIpV4Address, victimMacAddress.Value, victimIpV4Address, localMacAddress).Execute(packetCommunicator);
+                        }
+                    }
                 }
-
-                var livePacketDevice = GetLivePacketDevice(options.RequestedNetworkInterface);
-
-                if (options.ArpMitmVictimIpV4 != null)
+                catch (Exception exception)
                 {
-                    var localMacAddress = livePacketDevice.GetMacAddress();
-
-                    // TODO: what happens if the IpV4 address is invalid?
-                    var victimIpV4Address = new IpV4Address(options.ArpMitmVictimIpV4);
-                    var gatewayIpV4Address = GetGatewayIpV4Address(livePacketDevice);
-                    var localIpV4SocketAddresses = livePacketDevice.Addresses.Where(address => address.Address != null);
-
-                    if (localIpV4SocketAddresses.Count() > 1)
-                    {
-                        throw new NotSupportedException($"Found multiple IPv4 addresses for '{livePacketDevice.Name}'.");
-                    }
-
-                    var localIpV4SocketAddress = localIpV4SocketAddresses.SingleOrDefault()?.Address;
-                    if (localIpV4SocketAddress == null || !(localIpV4SocketAddress is IpV4SocketAddress))
-                    {
-                        throw new NotSupportedException($"'{livePacketDevice.Name}' doesn't have an IPv4 address.");
-                    }
-
-                    var localIpV4Address = ((IpV4SocketAddress)localIpV4SocketAddress).Address;
-
-                    using (var packetCommunicator = livePacketDevice.Open())
-                    {
-                        MacAddress? victimMacAddress = null;
-                        new ArpRequest(victimIpV4Address, localMacAddress, localIpV4Address, macAddress =>
-                        {
-                            victimMacAddress = macAddress;
-                        }).Execute(packetCommunicator);
-
-                        MacAddress? gatewayMacAddress = null;
-                        new ArpRequest(gatewayIpV4Address, localMacAddress, localIpV4Address, macAddress =>
-                        {
-                            gatewayMacAddress = macAddress;
-                        }).Execute(packetCommunicator);
-
-                        // TODO: what if it never gets one?
-                        while (victimMacAddress == null) ;
-                        while (gatewayMacAddress == null) ;
-
-                        new ArpMitm(gatewayMacAddress.Value, gatewayIpV4Address, victimMacAddress.Value, victimIpV4Address, localMacAddress).Execute(packetCommunicator);
-                    }
+                    Log(LogLevel.Fatal, exception, "Unhandled exception.");
                 }
             });
         }

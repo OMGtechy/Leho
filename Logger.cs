@@ -81,5 +81,10 @@ namespace Leho
         {
             internalLogger.Log(logLevel.ToInternal(), message);
         }
+
+        public static void Log(LogLevel logLevel, Exception exception, string message)
+        {
+            internalLogger.Log(logLevel.ToInternal(), exception, message);
+        }
     }
 }
